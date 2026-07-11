@@ -12,9 +12,30 @@ Bot 不处理群聊消息，也不会持久保存贴纸文件。
 ## 部署要求
 
 - Debian 或 Ubuntu VPS。
+- Git 和 curl。
 - Docker Engine 和 Docker Compose。
 - 能够从 VPS 访问 Telegram Bot API。
 - 无需域名、反向代理、TLS 证书或开放入站端口。
+
+## 一键安装
+
+在已经安装 Docker 的 VPS 上运行：
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/oKafuChino/StickerDownloader/main/install.sh)"
+```
+
+脚本会隐藏输入 Bot Token，并要求输入管理员的 Telegram 数字用户 ID，
+然后把项目安装到 `~/sticker-downloader`、生成权限为 `0600` 的 `.env`，
+最后构建并启动容器。脚本不会安装 Docker、修改系统软件包或开放端口。
+
+可通过 `INSTALL_DIR` 自定义安装目录：
+
+```bash
+INSTALL_DIR=/opt/sticker-downloader bash -c "$(curl -fsSL https://raw.githubusercontent.com/oKafuChino/StickerDownloader/main/install.sh)"
+```
+
+自定义目录必须允许当前用户写入；脚本不会自动使用 `sudo`。
 
 ## 配置
 
@@ -64,4 +85,3 @@ docker compose up -d --build
 docker build --target test -t telegram-sticker-converter:test .
 docker run --rm telegram-sticker-converter:test python -m pytest -v
 ```
-
