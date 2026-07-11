@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telegram-sticker-converter"
+version = "0.1.0"
+description = "Invite-only Telegram sticker conversion bot"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "aiogram>=3,<4",
+  "aiosqlite>=0.20,<1",
+  "Pillow>=10,<12",
+  "lottie>=0.7,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.24,<1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+  "integration: runs real Pillow, Lottie, and FFmpeg conversions",
+]
+
