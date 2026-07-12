@@ -1,4 +1,7 @@
 from app.handlers import (
+    STICKER_ACKNOWLEDGEMENT,
+    help_text,
+    is_feature_authorized,
     is_private_chat,
     should_download_sticker,
     sticker_asset_from_flags,
@@ -30,4 +33,31 @@ def test_video_sticker_routes_to_video_conversion() -> None:
     )
 
     assert asset.kind is StickerKind.VIDEO
+
+
+def test_regular_help_does_not_reveal_admin_commands() -> None:
+    text = help_text(is_owner=False)
+
+    assert "/help" in text
+    assert "发送贴纸" in text
+    assert "/invite" not in text
+    assert "/revoke" not in text
+
+
+def test_owner_help_includes_admin_commands() -> None:
+    text = help_text(is_owner=True)
+
+    assert "/invite" in text
+    assert "/invites" in text
+    assert "/revoke <邀请码>" in text
+
+
+def test_features_require_owner_or_active_authorization() -> None:
+    assert is_feature_authorized(is_owner=True, is_authorized=False)
+    assert is_feature_authorized(is_owner=False, is_authorized=True)
+    assert not is_feature_authorized(is_owner=False, is_authorized=False)
+
+
+def test_sticker_acknowledgement_copy_is_stable() -> None:
+    assert STICKER_ACKNOWLEDGEMENT == "已收到贴纸，正在转换，请稍等。"
 

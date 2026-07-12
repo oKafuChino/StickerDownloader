@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from app.access import AccessService, RedeemResult
 from app.converters import ConversionError, ConversionService
 from app.models import StickerAsset, sticker_kind
+from app.text import chunk_lines
 from app.workspace import task_workspace
 
 
@@ -80,9 +82,11 @@ def build_router(
     converter: ConversionService,
     temp_root: Path,
     owner_telegram_id: int,
+    processing_concurrency: int,
 ) -> Router:
     router = Router(name="private-sticker-converter")
     private_chat = F.chat.type == ChatType.PRIVATE
+    processing_slots = asyncio.Semaphore(processing_concurrency)
 
     def is_owner(message: Message) -> bool:
         return (
@@ -145,7 +149,8 @@ def build_router(
             f"{invite.code} | {invite.status} | 用户：{invite.redeemed_by or '-'}"
             for invite in invites
         ]
-        await message.answer("\n".join(lines))
+        for chunk in chunk_lines(lines):
+            await message.answer(chunk)
 
     @router.message(Command("revoke"), private_chat)
     async def revoke_invite(message: Message, command: CommandObject) -> None:
@@ -188,28 +193,29 @@ def build_router(
                 bot=message.bot,
                 chat_id=message.chat.id,
             ):
-                async with task_workspace(temp_root) as task_dir:
-                    telegram_file = await message.bot.get_file(asset.file_id)
-                    if not telegram_file.file_path:
-                        raise ConversionError("Telegram did not return a file path")
+                async with processing_slots:
+                    async with task_workspace(temp_root) as task_dir:
+                        telegram_file = await message.bot.get_file(asset.file_id)
+                        if not telegram_file.file_path:
+                            raise ConversionError("Telegram did not return a file path")
 
-                    source = task_dir / (
-                        "source" + ConversionService.source_suffix(asset.kind)
-                    )
-                    await message.bot.download_file(
-                        telegram_file.file_path,
-                        destination=source,
-                    )
-                    output = await converter.convert(
-                        asset=asset,
-                        source=source,
-                        task_dir=task_dir,
-                    )
-                    filename = f"sticker-{asset.file_unique_id}{output.suffix}"
-                    await message.answer_document(
-                        FSInputFile(output, filename=filename),
-                        disable_content_type_detection=True,
-                    )
+                        source = task_dir / (
+                            "source" + ConversionService.source_suffix(asset.kind)
+                        )
+                        await message.bot.download_file(
+                            telegram_file.file_path,
+                            destination=source,
+                        )
+                        output = await converter.convert(
+                            asset=asset,
+                            source=source,
+                            task_dir=task_dir,
+                        )
+                        filename = f"sticker-{asset.file_unique_id}{output.suffix}"
+                        await message.answer_document(
+                            FSInputFile(output, filename=filename),
+                            disable_content_type_detection=True,
+                        )
         except Exception:
             logger.exception(
                 "Sticker conversion failed for user=%s file=%s",

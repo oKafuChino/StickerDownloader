@@ -9,6 +9,8 @@ RUN apt-get update \
 COPY pyproject.toml ./
 COPY app ./app
 RUN pip install --no-cache-dir .
+RUN command -v lottie_convert.py \
+    && ffmpeg -hide_banner -decoders 2>&1 | grep -q 'libvpx-vp9'
 
 FROM base AS test
 
@@ -18,4 +20,3 @@ RUN pip install --no-cache-dir ".[dev]"
 FROM base AS runtime
 
 CMD ["python", "-m", "app.main"]
-

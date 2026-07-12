@@ -56,7 +56,7 @@ grep -qx 'DATABASE_PATH=/data/sticker-bot.sqlite3' "$INSTALL_DIR/.env"
 grep -qx 'TEMP_ROOT=/tmp/sticker-bot' "$INSTALL_DIR/.env"
 grep -qx 'CONVERSION_CONCURRENCY=2' "$INSTALL_DIR/.env"
 test "$(stat -c '%a' "$INSTALL_DIR/.env")" = "600"
-grep -qx 'compose up -d --build' "$DOCKER_LOG"
+grep -qx 'compose up -d --build --wait --wait-timeout 60' "$DOCKER_LOG"
 grep -qx 'compose ps' "$DOCKER_LOG"
 
 INVALID_DIR="$TEST_ROOT/invalid-owner"

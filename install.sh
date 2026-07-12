@@ -72,10 +72,10 @@ trap - EXIT
 printf '正在构建并启动 Bot ...\n'
 (
   cd "$INSTALL_DIR"
-  docker compose up -d --build
+  docker compose up -d --build --wait --wait-timeout 60
   docker compose ps
 )
 
 printf '\n安装完成。\n'
 printf '查看日志：cd %q && docker compose logs -f bot\n' "$INSTALL_DIR"
-printf '更新服务：cd %q && git pull --ff-only && docker compose up -d --build\n' "$INSTALL_DIR"
+printf '更新服务：cd %q && git pull --ff-only && docker compose up -d --build --wait --wait-timeout 60\n' "$INSTALL_DIR"

@@ -13,26 +13,31 @@ from app.settings import Settings
 
 async def run_bot(settings: Settings) -> None:
     repository = AccessRepository(settings.database_path)
-    await repository.initialize()
-    bot = Bot(token=settings.bot_token)
-    dispatcher = Dispatcher()
-    dispatcher.include_router(
-        build_router(
-            access=AccessService(repository),
-            converter=ConversionService(settings.conversion_concurrency),
-            temp_root=settings.temp_root,
-            owner_telegram_id=settings.owner_telegram_id,
-        )
-    )
-
+    bot: Bot | None = None
     try:
+        await repository.initialize()
+        bot = Bot(token=settings.bot_token)
+        dispatcher = Dispatcher()
+        dispatcher.include_router(
+            build_router(
+                access=AccessService(repository),
+                converter=ConversionService(settings.conversion_concurrency),
+                temp_root=settings.temp_root,
+                owner_telegram_id=settings.owner_telegram_id,
+                processing_concurrency=settings.conversion_concurrency,
+            )
+        )
         await dispatcher.start_polling(
             bot,
             allowed_updates=dispatcher.resolve_used_update_types(),
+            close_bot_session=False,
         )
     finally:
-        await repository.close()
-        await bot.session.close()
+        try:
+            if bot is not None:
+                await bot.session.close()
+        finally:
+            await repository.close()
 
 
 def main() -> None:
@@ -46,4 +51,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

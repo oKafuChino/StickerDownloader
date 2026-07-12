@@ -7,7 +7,12 @@ services:
     volumes:
       - bot-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
 
 volumes:
   bot-data:
-

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS invitations (
   code TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('active', 'claimed', 'revoked')),
-  redeemed_by INTEGER UNIQUE,
+  redeemed_by INTEGER,
   redeemed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS authorized_users (
@@ -21,6 +21,35 @@ CREATE TABLE IF NOT EXISTS authorized_users (
   invite_code TEXT NOT NULL UNIQUE REFERENCES invitations(code),
   authorized_at TEXT NOT NULL
 );
+"""
+
+LEGACY_REDEEMER_MIGRATION = """
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+ALTER TABLE authorized_users RENAME TO authorized_users_legacy;
+ALTER TABLE invitations RENAME TO invitations_legacy;
+CREATE TABLE invitations (
+  code TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'claimed', 'revoked')),
+  redeemed_by INTEGER,
+  redeemed_at TEXT
+);
+CREATE TABLE authorized_users (
+  user_id INTEGER PRIMARY KEY,
+  invite_code TEXT NOT NULL UNIQUE REFERENCES invitations(code),
+  authorized_at TEXT NOT NULL
+);
+INSERT INTO invitations(code, created_at, status, redeemed_by, redeemed_at)
+SELECT code, created_at, status, redeemed_by, redeemed_at
+FROM invitations_legacy;
+INSERT INTO authorized_users(user_id, invite_code, authorized_at)
+SELECT user_id, invite_code, authorized_at
+FROM authorized_users_legacy;
+DROP TABLE authorized_users_legacy;
+DROP TABLE invitations_legacy;
+COMMIT;
+PRAGMA foreign_keys = ON;
 """
 
 
@@ -32,7 +61,7 @@ class AccessRepository:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._connection: aiosqlite.Connection | None = None
-        self._write_lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()
 
     @property
     def connection(self) -> aiosqlite.Connection:
@@ -46,6 +75,25 @@ class AccessRepository:
         self._connection.row_factory = aiosqlite.Row
         await self._connection.executescript(SCHEMA)
         await self._connection.commit()
+        if await self._has_legacy_redeemer_unique_constraint():
+            await self._connection.executescript(LEGACY_REDEEMER_MIGRATION)
+
+    async def _has_legacy_redeemer_unique_constraint(self) -> bool:
+        async with self.connection.execute(
+            "PRAGMA index_list(invitations)"
+        ) as cursor:
+            indexes = await cursor.fetchall()
+        for index in indexes:
+            if not index[2]:
+                continue
+            index_name = index[1]
+            async with self.connection.execute(
+                f'PRAGMA index_info("{index_name}")'
+            ) as cursor:
+                columns = await cursor.fetchall()
+            if [column[2] for column in columns] == ["redeemed_by"]:
+                return True
+        return False
 
     async def close(self) -> None:
         if self._connection is not None:
@@ -54,7 +102,7 @@ class AccessRepository:
 
     async def create_invite(self, code: str) -> Invite:
         created_at = _utc_now()
-        async with self._write_lock:
+        async with self._operation_lock:
             try:
                 await self.connection.execute(
                     "INSERT INTO invitations(code, created_at, status) VALUES (?, ?, 'active')",
@@ -64,40 +112,43 @@ class AccessRepository:
             except aiosqlite.IntegrityError:
                 await self.connection.rollback()
                 raise
-            except Exception:
+            except BaseException:
                 await self.connection.rollback()
                 raise
         return Invite(code=code, status="active", redeemed_by=None, redeemed_at=None)
 
     async def get_invite(self, code: str) -> Invite | None:
-        async with self.connection.execute(
-            "SELECT code, status, redeemed_by, redeemed_at FROM invitations WHERE code = ?",
-            (code,),
-        ) as cursor:
-            row = await cursor.fetchone()
+        async with self._operation_lock:
+            async with self.connection.execute(
+                "SELECT code, status, redeemed_by, redeemed_at FROM invitations WHERE code = ?",
+                (code,),
+            ) as cursor:
+                row = await cursor.fetchone()
         return self._invite_from_row(row) if row is not None else None
 
     async def list_invites(self) -> list[Invite]:
-        async with self.connection.execute(
-            """
-            SELECT code, status, redeemed_by, redeemed_at
-            FROM invitations
-            ORDER BY created_at DESC
-            """
-        ) as cursor:
-            rows = await cursor.fetchall()
+        async with self._operation_lock:
+            async with self.connection.execute(
+                """
+                SELECT code, status, redeemed_by, redeemed_at
+                FROM invitations
+                ORDER BY created_at DESC
+                """
+            ) as cursor:
+                rows = await cursor.fetchall()
         return [self._invite_from_row(row) for row in rows]
 
     async def is_authorized(self, user_id: int) -> bool:
-        async with self.connection.execute(
-            "SELECT 1 FROM authorized_users WHERE user_id = ?",
-            (user_id,),
-        ) as cursor:
-            return await cursor.fetchone() is not None
+        async with self._operation_lock:
+            async with self.connection.execute(
+                "SELECT 1 FROM authorized_users WHERE user_id = ?",
+                (user_id,),
+            ) as cursor:
+                return await cursor.fetchone() is not None
 
     async def claim_invite(self, code: str, user_id: int) -> bool:
         now = _utc_now()
-        async with self._write_lock:
+        async with self._operation_lock:
             try:
                 await self.connection.execute("BEGIN IMMEDIATE")
                 cursor = await self.connection.execute(
@@ -123,12 +174,12 @@ class AccessRepository:
             except aiosqlite.IntegrityError:
                 await self.connection.rollback()
                 return False
-            except Exception:
+            except BaseException:
                 await self.connection.rollback()
                 raise
 
     async def revoke_invite(self, code: str) -> bool:
-        async with self._write_lock:
+        async with self._operation_lock:
             try:
                 await self.connection.execute("BEGIN IMMEDIATE")
                 cursor = await self.connection.execute(
@@ -144,7 +195,7 @@ class AccessRepository:
                 )
                 await self.connection.commit()
                 return True
-            except Exception:
+            except BaseException:
                 await self.connection.rollback()
                 raise
 

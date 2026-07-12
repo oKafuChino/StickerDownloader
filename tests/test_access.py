@@ -46,3 +46,21 @@ async def test_unknown_invitation_is_invalid(repository: AccessRepository) -> No
         is RedeemResult.INVALID
     )
 
+
+@pytest.mark.asyncio
+async def test_revoked_user_can_redeem_a_new_invitation(
+    repository: AccessRepository,
+) -> None:
+    first = AccessService(repository, code_factory=lambda: "first-code")
+    await first.issue_invite()
+    await first.redeem(code="first-code", user_id=100)
+    await first.revoke("first-code")
+
+    second = AccessService(repository, code_factory=lambda: "second-code")
+    await second.issue_invite()
+
+    assert (
+        await second.redeem(code="second-code", user_id=100)
+        is RedeemResult.REDEEMED
+    )
+    assert await second.is_authorized(100)

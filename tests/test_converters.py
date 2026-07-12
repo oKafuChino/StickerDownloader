@@ -104,20 +104,38 @@ async def test_tgs_becomes_readable_gif(tmp_path: Path) -> None:
     assert output.suffix == ".gif"
     with Image.open(output) as image:
         assert image.format == "GIF"
+        assert image.convert("RGBA").getpixel((0, 0))[3] == 0
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_webm_becomes_readable_gif(tmp_path: Path) -> None:
+async def test_transparent_webm_becomes_transparent_gif(tmp_path: Path) -> None:
+    frame = tmp_path / "transparent.png"
     source = tmp_path / "sticker.webm"
+    image = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+    for x in range(8, 24):
+        for y in range(8, 24):
+            image.putpixel((x, y), (255, 0, 0, 255))
+    image.save(frame, "PNG")
     subprocess.run(
         [
             "ffmpeg",
             "-y",
-            "-f",
-            "lavfi",
+            "-loop",
+            "1",
+            "-framerate",
+            "10",
             "-i",
-            "color=c=red:s=32x32:d=1",
+            str(frame),
+            "-t",
+            "1",
+            "-c:v",
+            "libvpx-vp9",
+            "-pix_fmt",
+            "yuva420p",
+            "-auto-alt-ref",
+            "0",
+            "-an",
             str(source),
         ],
         check=True,
@@ -133,4 +151,4 @@ async def test_webm_becomes_readable_gif(tmp_path: Path) -> None:
     assert output.suffix == ".gif"
     with Image.open(output) as image:
         assert image.format == "GIF"
-
+        assert image.convert("RGBA").getpixel((0, 0))[3] == 0

@@ -6,7 +6,3 @@ __pycache__/
 *.py[cod]
 data/
 tmp/
-
-tests/test_document_delivery.py
-docs/superpowers/plans/2026-07-12-authorized-help-and-sticker-feedback-implementation.md
-docs/superpowers/specs/2026-07-12-authorized-help-and-sticker-feedback-design.md
