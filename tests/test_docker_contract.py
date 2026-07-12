@@ -22,7 +22,17 @@ class DockerRuntimeContractTest(unittest.TestCase):
 
         self.assertIn("healthcheck:", compose)
         self.assertIn("--wait --wait-timeout 60", installer)
-        self.assertEqual(installer.count("--wait --wait-timeout 60"), 2)
+        self.assertEqual(installer.count("--wait --wait-timeout 60"), 1)
+
+    def test_local_update_command_is_advertised(self) -> None:
+        installer = Path("install.sh").read_text(encoding="utf-8")
+        readme = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("bash %q/update.sh", installer)
+        self.assertIn("bash ~/sticker-downloader/update.sh", readme)
+        self.assertIn("INSTALL_DIR=/opt/sticker-downloader", readme)
+        self.assertIn("旧版本首次启用", readme)
+        self.assertIn("git pull --ff-only origin main", readme)
 
 
 if __name__ == "__main__":
