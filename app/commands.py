@@ -4,6 +4,10 @@ from pathlib import Path
 def video_to_gif_command(source: Path, output: Path) -> tuple[str, ...]:
     return (
         "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
         "-y",
         "-c:v",
         "libvpx-vp9",
@@ -15,4 +19,3 @@ def video_to_gif_command(source: Path, output: Path) -> tuple[str, ...]:
         "[b][p]paletteuse=alpha_threshold=128",
         str(output),
     )
-

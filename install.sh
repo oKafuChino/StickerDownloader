@@ -64,6 +64,7 @@ printf '%s\n' \
   "DATABASE_PATH=/data/sticker-bot.sqlite3" \
   "TEMP_ROOT=/tmp/sticker-bot" \
   "CONVERSION_CONCURRENCY=2" \
+  "MAX_PENDING_CONVERSIONS=8" \
   >"$temporary_env"
 chmod 600 "$temporary_env"
 mv -f "$temporary_env" "$INSTALL_DIR/.env"

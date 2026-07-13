@@ -14,6 +14,10 @@ class VideoTransparencyContractTest(unittest.TestCase):
         self.assertIn("[0:v]format=rgba,split[a][b]", filter_graph)
         self.assertIn("palettegen=reserve_transparent=1", filter_graph)
         self.assertIn("paletteuse=alpha_threshold=128", filter_graph)
+        self.assertIn("-hide_banner", command)
+        self.assertEqual(command[command.index("-loglevel") + 1], "error")
+        self.assertIn("-nostats", command)
+        self.assertNotIn("-threads", command)
 
 
 if __name__ == "__main__":

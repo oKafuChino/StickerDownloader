@@ -19,10 +19,12 @@ dev = [
   "pytest>=8,<9",
   "pytest-asyncio>=0.24,<1",
 ]
+security = [
+  "pip-audit>=2,<3",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
   "integration: runs real Pillow, Lottie, and FFmpeg conversions",
 ]
-

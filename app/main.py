@@ -25,6 +25,7 @@ async def run_bot(settings: Settings) -> None:
                 temp_root=settings.temp_root,
                 owner_telegram_id=settings.owner_telegram_id,
                 processing_concurrency=settings.conversion_concurrency,
+                max_pending_conversions=settings.max_pending_conversions,
             )
         )
         await dispatcher.start_polling(

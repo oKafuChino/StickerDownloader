@@ -1,4 +1,9 @@
+from unittest.mock import AsyncMock
+
+import pytest
+
 from app.handlers import (
+    MAX_CAPACITY_REPLY,
     STICKER_ACKNOWLEDGEMENT,
     help_text,
     is_feature_authorized,
@@ -52,12 +57,35 @@ def test_owner_help_includes_admin_commands() -> None:
     assert "/revoke <邀请码>" in text
 
 
-def test_features_require_owner_or_active_authorization() -> None:
-    assert is_feature_authorized(is_owner=True, is_authorized=False)
-    assert is_feature_authorized(is_owner=False, is_authorized=True)
-    assert not is_feature_authorized(is_owner=False, is_authorized=False)
+@pytest.mark.asyncio
+async def test_owner_authorization_skips_repository_lookup() -> None:
+    access = AsyncMock()
+
+    assert await is_feature_authorized(
+        is_owner=True,
+        user_id=42,
+        access=access,
+    )
+    access.is_authorized.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_owner_authorization_uses_repository_result() -> None:
+    access = AsyncMock()
+    access.is_authorized.return_value = True
+
+    assert await is_feature_authorized(
+        is_owner=False,
+        user_id=42,
+        access=access,
+    )
+    access.is_authorized.assert_awaited_once_with(42)
 
 
 def test_sticker_acknowledgement_copy_is_stable() -> None:
     assert STICKER_ACKNOWLEDGEMENT == "已收到贴纸，正在转换，请稍等。"
+
+
+def test_capacity_reply_copy_is_stable() -> None:
+    assert MAX_CAPACITY_REPLY == "当前任务较多，请稍后重试。"
 

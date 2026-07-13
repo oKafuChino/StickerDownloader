@@ -4,8 +4,15 @@ services:
       context: .
       target: runtime
     env_file: .env
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
     volumes:
       - bot-data:/data
+      - bot-temp:/tmp
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1"]
@@ -16,3 +23,4 @@ services:
 
 volumes:
   bot-data:
+  bot-temp:

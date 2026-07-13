@@ -10,6 +10,7 @@ from aiogram.types import FSInputFile, Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from app.access import AccessService, RedeemResult
+from app.capacity import CapacityLimiter
 from app.converters import ConversionError, ConversionService
 from app.models import StickerAsset, sticker_kind
 from app.text import chunk_lines
@@ -19,6 +20,7 @@ from app.workspace import task_workspace
 logger = logging.getLogger(__name__)
 
 UNAUTHORIZED_REPLY = "请先使用邀请码启动 Bot。"
+MAX_CAPACITY_REPLY = "当前任务较多，请稍后重试。"
 STICKER_ACKNOWLEDGEMENT = "已收到贴纸，正在转换，请稍等。"
 
 REDEEM_REPLIES = {
@@ -38,8 +40,10 @@ def should_download_sticker(*, chat_type: str, is_authorized: bool) -> bool:
     return is_private_chat(chat_type) and is_authorized
 
 
-def is_feature_authorized(*, is_owner: bool, is_authorized: bool) -> bool:
-    return is_owner or is_authorized
+async def is_feature_authorized(
+    *, is_owner: bool, user_id: int, access: AccessService
+) -> bool:
+    return is_owner or await access.is_authorized(user_id)
 
 
 def help_text(*, is_owner: bool) -> str:
@@ -83,10 +87,14 @@ def build_router(
     temp_root: Path,
     owner_telegram_id: int,
     processing_concurrency: int,
+    max_pending_conversions: int,
 ) -> Router:
     router = Router(name="private-sticker-converter")
     private_chat = F.chat.type == ChatType.PRIVATE
     processing_slots = asyncio.Semaphore(processing_concurrency)
+    sticker_capacity = CapacityLimiter(
+        processing_concurrency + max_pending_conversions
+    )
 
     def is_owner(message: Message) -> bool:
         return (
@@ -119,9 +127,10 @@ def build_router(
         if message.from_user is None:
             return
         owner = is_owner(message)
-        authorized = is_feature_authorized(
+        authorized = await is_feature_authorized(
             is_owner=owner,
-            is_authorized=await access.is_authorized(message.from_user.id),
+            user_id=message.from_user.id,
+            access=access,
         )
         if not authorized:
             await message.answer(UNAUTHORIZED_REPLY)
@@ -168,60 +177,74 @@ def build_router(
         if message.from_user is None or message.sticker is None:
             return
 
-        authorized = is_feature_authorized(
-            is_owner=is_owner(message),
-            is_authorized=await access.is_authorized(message.from_user.id),
-        )
-        if not should_download_sticker(
-            chat_type=message.chat.type,
-            is_authorized=authorized,
-        ):
-            await message.answer(UNAUTHORIZED_REPLY)
+        if not sticker_capacity.try_acquire():
+            await message.answer(MAX_CAPACITY_REPLY)
             return
 
-        sticker = message.sticker
-        asset = sticker_asset_from_flags(
-            file_id=sticker.file_id,
-            file_unique_id=sticker.file_unique_id,
-            is_animated=sticker.is_animated,
-            is_video=sticker.is_video,
-        )
-
         try:
-            await message.answer(STICKER_ACKNOWLEDGEMENT)
-            async with ChatActionSender.typing(
-                bot=message.bot,
-                chat_id=message.chat.id,
-            ):
-                async with processing_slots:
-                    async with task_workspace(temp_root) as task_dir:
-                        telegram_file = await message.bot.get_file(asset.file_id)
-                        if not telegram_file.file_path:
-                            raise ConversionError("Telegram did not return a file path")
-
-                        source = task_dir / (
-                            "source" + ConversionService.source_suffix(asset.kind)
-                        )
-                        await message.bot.download_file(
-                            telegram_file.file_path,
-                            destination=source,
-                        )
-                        output = await converter.convert(
-                            asset=asset,
-                            source=source,
-                            task_dir=task_dir,
-                        )
-                        filename = f"sticker-{asset.file_unique_id}{output.suffix}"
-                        await message.answer_document(
-                            FSInputFile(output, filename=filename),
-                            disable_content_type_detection=True,
-                        )
-        except Exception:
-            logger.exception(
-                "Sticker conversion failed for user=%s file=%s",
-                message.from_user.id,
-                asset.file_unique_id,
+            owner = is_owner(message)
+            authorized = await is_feature_authorized(
+                is_owner=owner,
+                user_id=message.from_user.id,
+                access=access,
             )
-            await message.answer("转换失败，请稍后重试。")
+            if not should_download_sticker(
+                chat_type=message.chat.type,
+                is_authorized=authorized,
+            ):
+                await message.answer(UNAUTHORIZED_REPLY)
+                return
+
+            sticker = message.sticker
+            asset = sticker_asset_from_flags(
+                file_id=sticker.file_id,
+                file_unique_id=sticker.file_unique_id,
+                is_animated=sticker.is_animated,
+                is_video=sticker.is_video,
+            )
+
+            try:
+                await message.answer(STICKER_ACKNOWLEDGEMENT)
+                async with processing_slots:
+                    async with ChatActionSender.typing(
+                        bot=message.bot,
+                        chat_id=message.chat.id,
+                    ):
+                        async with task_workspace(temp_root) as task_dir:
+                            telegram_file = await message.bot.get_file(asset.file_id)
+                            if not telegram_file.file_path:
+                                raise ConversionError(
+                                    "Telegram did not return a file path"
+                                )
+
+                            source = task_dir / (
+                                "source"
+                                + ConversionService.source_suffix(asset.kind)
+                            )
+                            await message.bot.download_file(
+                                telegram_file.file_path,
+                                destination=source,
+                            )
+                            output = await converter.convert(
+                                asset=asset,
+                                source=source,
+                                task_dir=task_dir,
+                            )
+                            filename = (
+                                f"sticker-{asset.file_unique_id}{output.suffix}"
+                            )
+                            await message.answer_document(
+                                FSInputFile(output, filename=filename),
+                                disable_content_type_detection=True,
+                            )
+            except Exception:
+                logger.exception(
+                    "Sticker conversion failed for user=%s file=%s",
+                    message.from_user.id,
+                    asset.file_unique_id,
+                )
+                await message.answer("转换失败，请稍后重试。")
+        finally:
+            sticker_capacity.release()
 
     return router

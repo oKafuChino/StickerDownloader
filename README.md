@@ -114,6 +114,7 @@ cp .env.example .env
 - `DATABASE_PATH`：SQLite 路径，Compose 默认使用 `/data/sticker-bot.sqlite3`。
 - `TEMP_ROOT`：媒体临时目录，默认使用 `/tmp/sticker-bot`。
 - `CONVERSION_CONCURRENCY`：同时处理的转换任务数，小型 VPS 建议使用 `1` 或 `2`。
+- `MAX_PENDING_CONVERSIONS`：允许等待的转换任务数，默认 `8`；设为 `0` 时不排队。
 
 手动启动：
 
@@ -128,6 +129,12 @@ docker compose up -d --build --wait --wait-timeout 60
 ```bash
 docker build --target test -t telegram-sticker-converter:test .
 docker run --rm telegram-sticker-converter:test python -m pytest -v
+```
+
+联网检查 Python 依赖的已知安全漏洞：
+
+```bash
+docker run --rm telegram-sticker-converter:test python -m pip_audit
 ```
 
 在 Debian、Ubuntu 或其他 Linux 环境中测试安装和更新脚本：
