@@ -15,18 +15,19 @@ class DocumentDeliveryContractTest(unittest.TestCase):
             and node.func.attr == "answer_document"
         ]
 
-        self.assertEqual(len(document_calls), 1)
-        keyword = next(
-            (
-                item
-                for item in document_calls[0].keywords
-                if item.arg == "disable_content_type_detection"
-            ),
-            None,
-        )
-        self.assertIsNotNone(keyword)
-        self.assertIsInstance(keyword.value, ast.Constant)
-        self.assertIs(keyword.value.value, True)
+        self.assertEqual(len(document_calls), 2)
+        for document_call in document_calls:
+            keyword = next(
+                (
+                    item
+                    for item in document_call.keywords
+                    if item.arg == "disable_content_type_detection"
+                ),
+                None,
+            )
+            self.assertIsNotNone(keyword)
+            self.assertIsInstance(keyword.value, ast.Constant)
+            self.assertIs(keyword.value.value, True)
 
 
 if __name__ == "__main__":

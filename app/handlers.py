@@ -13,6 +13,12 @@ from app.access import AccessService, RedeemResult
 from app.capacity import CapacityLimiter
 from app.converters import ConversionError, ConversionService
 from app.models import StickerAsset, sticker_kind
+from app.packs import (
+    StickerPackError,
+    StickerPackTooLargeError,
+    create_sticker_pack_archive,
+    parse_sticker_set_name,
+)
 from app.text import chunk_lines
 from app.workspace import task_workspace
 
@@ -22,6 +28,7 @@ logger = logging.getLogger(__name__)
 UNAUTHORIZED_REPLY = "请先使用邀请码启动 Bot。"
 MAX_CAPACITY_REPLY = "当前任务较多，请稍后重试。"
 STICKER_ACKNOWLEDGEMENT = "已收到贴纸，正在转换，请稍等。"
+PACK_ACKNOWLEDGEMENT = "正在获取贴纸包，请稍等。"
 
 REDEEM_REPLIES = {
     RedeemResult.REDEEMED: "邀请码验证成功，现在可以发送贴纸了。",
@@ -51,6 +58,7 @@ def help_text(*, is_owner: bool) -> str:
         "可用指令：",
         "/help - 查看指令列表",
         "/start - 查看授权状态",
+        "/getpack <贴纸包链接> - 下载整个贴纸包",
         "发送贴纸 - 自动转换为 PNG 或 GIF",
     ]
     if is_owner:
@@ -171,6 +179,98 @@ def build_router(
             return
         revoked = await access.revoke(command.args.strip())
         await message.answer("邀请码已撤销。" if revoked else "未找到该邀请码。")
+
+    @router.message(Command("getpack"), private_chat)
+    async def get_sticker_pack(
+        message: Message, command: CommandObject
+    ) -> None:
+        if message.from_user is None:
+            return
+
+        owner = is_owner(message)
+        authorized = await is_feature_authorized(
+            is_owner=owner,
+            user_id=message.from_user.id,
+            access=access,
+        )
+        if not authorized:
+            await message.answer(UNAUTHORIZED_REPLY)
+            return
+        if not command.args:
+            await message.answer(
+                "用法：/getpack https://t.me/addstickers/贴纸包名称"
+            )
+            return
+
+        try:
+            pack_name = parse_sticker_set_name(command.args)
+        except ValueError:
+            await message.answer(
+                "贴纸包链接无效，请发送标准的 t.me/addstickers 链接。"
+            )
+            return
+
+        if not sticker_capacity.try_acquire():
+            await message.answer(MAX_CAPACITY_REPLY)
+            return
+
+        try:
+            status = await message.answer(PACK_ACKNOWLEDGEMENT)
+            async with processing_slots:
+                async with ChatActionSender.typing(
+                    bot=message.bot,
+                    chat_id=message.chat.id,
+                ):
+                    async with task_workspace(temp_root) as task_dir:
+                        sticker_set = await message.bot.get_sticker_set(pack_name)
+                        assets = [
+                            sticker_asset_from_flags(
+                                file_id=sticker.file_id,
+                                file_unique_id=sticker.file_unique_id,
+                                is_animated=sticker.is_animated,
+                                is_video=sticker.is_video,
+                            )
+                            for sticker in sticker_set.stickers
+                        ]
+                        await status.edit_text(
+                            f"已找到「{sticker_set.title}」，共 {len(assets)} 张，正在下载。"
+                        )
+
+                        async def download(
+                            asset: StickerAsset, destination: Path
+                        ) -> None:
+                            telegram_file = await message.bot.get_file(asset.file_id)
+                            if not telegram_file.file_path:
+                                raise StickerPackError(
+                                    "Telegram did not return a file path"
+                                )
+                            await message.bot.download_file(
+                                telegram_file.file_path,
+                                destination=destination,
+                            )
+
+                        archive = await create_sticker_pack_archive(
+                            assets=assets,
+                            task_dir=task_dir,
+                            download=download,
+                        )
+                        await message.answer_document(
+                            FSInputFile(archive, filename=f"{pack_name}.zip"),
+                            caption=f"{sticker_set.title} · {len(assets)} 张贴纸",
+                            disable_content_type_detection=True,
+                        )
+                        await status.edit_text("贴纸包下载完成。")
+        except StickerPackTooLargeError:
+            await message.answer("贴纸包超过 Telegram 文件大小限制，无法发送。")
+        except Exception:
+            logger.exception(
+                "Sticker pack download failed for user=%s pack=%s",
+                message.from_user.id,
+                pack_name,
+            )
+            await message.answer("贴纸包获取失败，请检查链接后重试。")
+        finally:
+            sticker_capacity.release()
 
     @router.message(F.sticker, private_chat)
     async def convert_sticker(message: Message) -> None:

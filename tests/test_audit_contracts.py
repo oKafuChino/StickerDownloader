@@ -109,13 +109,14 @@ class RepositoryHygieneContractTest(unittest.TestCase):
     def test_processing_slot_is_acquired_before_workspace_and_download(self) -> None:
         source = Path("app/handlers.py").read_text(encoding="utf-8")
 
+        handler = source.index("async def convert_sticker")
         acknowledgement = source.index(
-            "await message.answer(STICKER_ACKNOWLEDGEMENT)"
+            "await message.answer(STICKER_ACKNOWLEDGEMENT)", handler
         )
-        slot = source.index("async with processing_slots:")
-        typing = source.index("async with ChatActionSender.typing(")
-        workspace = source.index("async with task_workspace(temp_root)")
-        download = source.index("await message.bot.get_file")
+        slot = source.index("async with processing_slots:", handler)
+        typing = source.index("async with ChatActionSender.typing(", handler)
+        workspace = source.index("async with task_workspace(temp_root)", handler)
+        download = source.index("await message.bot.get_file", handler)
         self.assertLess(acknowledgement, slot)
         self.assertLess(slot, typing)
         self.assertLess(slot, workspace)

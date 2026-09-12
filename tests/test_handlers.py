@@ -44,6 +44,7 @@ def test_regular_help_does_not_reveal_admin_commands() -> None:
     text = help_text(is_owner=False)
 
     assert "/help" in text
+    assert "/getpack" in text
     assert "发送贴纸" in text
     assert "/invite" not in text
     assert "/revoke" not in text
