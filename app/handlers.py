@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from datetime import datetime, timezone
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
@@ -12,6 +13,7 @@ from aiogram.utils.chat_action import ChatActionSender
 from app.access import AccessService, RedeemResult
 from app.capacity import CapacityLimiter
 from app.converters import ConversionError, ConversionService
+from app.downloads import TemporaryDownloadService
 from app.models import StickerAsset, sticker_kind
 from app.packs import (
     StickerPackError,
@@ -58,7 +60,7 @@ def help_text(*, is_owner: bool) -> str:
         "可用指令：",
         "/help - 查看指令列表",
         "/start - 查看授权状态",
-        "/getpack <贴纸包链接> - 下载整个贴纸包",
+        "/getpack <贴纸包链接> - 整包转换为 PNG/GIF 并获取下载链接",
         "发送贴纸 - 自动转换为 PNG 或 GIF",
     ]
     if is_owner:
@@ -96,6 +98,7 @@ def build_router(
     owner_telegram_id: int,
     processing_concurrency: int,
     max_pending_conversions: int,
+    downloads: TemporaryDownloadService | None = None,
 ) -> Router:
     router = Router(name="private-sticker-converter")
     private_chat = F.chat.type == ChatType.PRIVATE
@@ -202,6 +205,10 @@ def build_router(
             )
             return
 
+        if downloads is None:
+            await message.answer("临时下载服务未配置，请联系管理员设置 PUBLIC_BASE_URL。")
+            return
+
         try:
             pack_name = parse_sticker_set_name(command.args)
         except ValueError:
@@ -233,7 +240,7 @@ def build_router(
                             for sticker in sticker_set.stickers
                         ]
                         await status.edit_text(
-                            f"已找到「{sticker_set.title}」，共 {len(assets)} 张，正在下载。"
+                            f"已找到「{sticker_set.title}」，共 {len(assets)} 张，正在下载并转换为 PNG/GIF。"
                         )
 
                         async def download(
@@ -253,15 +260,22 @@ def build_router(
                             assets=assets,
                             task_dir=task_dir,
                             download=download,
+                            converter=converter,
                         )
-                        await message.answer_document(
-                            FSInputFile(archive, filename=f"{pack_name}.zip"),
-                            caption=f"{sticker_set.title} · {len(assets)} 张贴纸",
-                            disable_content_type_detection=True,
-                        )
-                        await status.edit_text("贴纸包下载完成。")
+                        link = await downloads.publish(archive, filename=f"{pack_name}.zip")
+                        expires = datetime.fromtimestamp(link.expires_at, timezone.utc)
+                        try:
+                            await status.edit_text(
+                                f"{sticker_set.title} · {len(assets)} 张 PNG/GIF 贴纸\n"
+                                f"下载链接：{link.url}\n"
+                                f"有效期至 {expires:%Y-%m-%d %H:%M:%S} UTC，重启后失效。",
+                                disable_web_page_preview=True,
+                            )
+                        except BaseException:
+                            await downloads.revoke(link.token)
+                            raise
         except StickerPackTooLargeError:
-            await message.answer("贴纸包超过 Telegram 文件大小限制，无法发送。")
+            await message.answer("贴纸包超过 200 MB 临时下载大小限制。")
         except Exception:
             logger.exception(
                 "Sticker pack download failed for user=%s pack=%s",

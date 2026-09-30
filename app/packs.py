@@ -9,7 +9,7 @@ from app.converters import ConversionService
 from app.models import StickerAsset
 
 
-MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 STICKER_SET_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -43,6 +43,7 @@ async def create_sticker_pack_archive(
     assets: Sequence[StickerAsset],
     task_dir: Path,
     download: Callable[[StickerAsset, Path], Awaitable[None]],
+    converter: ConversionService,
     max_archive_bytes: int = MAX_ARCHIVE_BYTES,
 ) -> Path:
     if not assets:
@@ -53,27 +54,46 @@ async def create_sticker_pack_archive(
     content_dir = task_dir / "pack"
     content_dir.mkdir()
     files: list[Path] = []
-    downloaded_bytes = 0
+    converted_bytes = 0
     width = max(3, len(str(len(assets))))
 
     for index, asset in enumerate(assets, start=1):
         suffix = ConversionService.source_suffix(asset.kind)
-        destination = content_dir / f"{index:0{width}d}{suffix}"
+        sticker_dir = content_dir / f"{index:0{width}d}"
+        sticker_dir.mkdir()
+        destination = sticker_dir / f"source{suffix}"
         await download(asset, destination)
         if not destination.is_file() or destination.stat().st_size == 0:
             raise StickerPackError(f"Telegram did not provide sticker {index}")
-        downloaded_bytes += destination.stat().st_size
-        if downloaded_bytes >= max_archive_bytes:
+        output = await converter.convert(
+            asset=asset, source=destination, task_dir=sticker_dir,
+        )
+        if not output.is_file() or output.stat().st_size == 0:
+            raise StickerPackError(f"Converter did not provide sticker {index}")
+        converted_bytes += output.stat().st_size
+        if converted_bytes >= max_archive_bytes:
             raise StickerPackTooLargeError(
-                "Sticker pack contents exceed the Telegram upload limit"
+                "Sticker pack contents exceed the temporary archive size limit"
             )
-        files.append(destination)
+        exported = content_dir / f"{index:0{width}d}{output.suffix}"
+        output.replace(exported)
+        destination.unlink()
+        sticker_dir.rmdir()
+        files.append(exported)
 
     archive = task_dir / "sticker-pack.zip"
-    await asyncio.to_thread(_write_archive, archive, files)
+    worker = asyncio.create_task(asyncio.to_thread(_write_archive, archive, files))
+    try:
+        await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # Finish file I/O before the workspace is removed.
+        try:
+            await worker
+        finally:
+            raise
     if archive.stat().st_size > max_archive_bytes:
         raise StickerPackTooLargeError(
-            "Sticker pack archive exceeds the Telegram upload limit"
+            "Sticker pack archive exceeds the temporary archive size limit"
         )
     return archive
 

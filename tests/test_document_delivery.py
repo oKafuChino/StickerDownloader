@@ -15,7 +15,7 @@ class DocumentDeliveryContractTest(unittest.TestCase):
             and node.func.attr == "answer_document"
         ]
 
-        self.assertEqual(len(document_calls), 2)
+        self.assertEqual(len(document_calls), 1)
         for document_call in document_calls:
             keyword = next(
                 (

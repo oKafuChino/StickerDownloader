@@ -20,6 +20,19 @@ def test_settings_reads_required_environment() -> None:
     assert settings.owner_telegram_id == 42
     assert settings.database_path == Path("/data/bot.sqlite3")
     assert settings.conversion_concurrency == 2
+    assert settings.download_port == 18080
+
+
+def test_download_port_override_is_preserved() -> None:
+    settings = Settings.from_env({
+        "BOT_TOKEN": "123:token",
+        "OWNER_TELEGRAM_ID": "42",
+        "DATABASE_PATH": "/data/bot.sqlite3",
+        "TEMP_ROOT": "/tmp/bot",
+        "CONVERSION_CONCURRENCY": "2",
+        "DOWNLOAD_PORT": "19090",
+    })
+    assert settings.download_port == 19090
 
 
 def test_settings_rejects_zero_concurrency() -> None:

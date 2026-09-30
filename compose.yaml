@@ -4,6 +4,8 @@ services:
       context: .
       target: runtime
     env_file: .env
+    ports:
+      - "${DOWNLOAD_PORT:-18080}:${DOWNLOAD_PORT:-18080}"
     read_only: true
     cap_drop:
       - ALL

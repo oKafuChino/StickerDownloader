@@ -10,10 +10,11 @@ class DockerRuntimeContractTest(unittest.TestCase):
         self.assertIn("ffmpeg -hide_banner -decoders", dockerfile)
         self.assertIn("libvpx-vp9", dockerfile)
 
-    def test_compose_does_not_publish_ports(self) -> None:
+    def test_compose_publishes_configured_download_port(self) -> None:
         compose = Path("compose.yaml").read_text(encoding="utf-8")
 
-        self.assertNotIn("ports:", compose)
+        self.assertIn("ports:", compose)
+        self.assertIn('${DOWNLOAD_PORT:-18080}:${DOWNLOAD_PORT:-18080}', compose)
         self.assertIn("restart: unless-stopped", compose)
 
     def test_runtime_container_is_security_hardened(self) -> None:

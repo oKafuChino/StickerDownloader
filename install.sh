@@ -30,6 +30,10 @@ printf '管理员 Telegram 数字用户 ID：' >&2
 IFS= read -r OWNER_TELEGRAM_ID || fail "未读取到 Telegram 用户 ID"
 [[ "$OWNER_TELEGRAM_ID" =~ ^[0-9]+$ ]] || fail "Telegram 用户 ID 必须是数字"
 
+printf '公网下载地址（例如 https://download.example.com）：' >&2
+IFS= read -r PUBLIC_BASE_URL || fail "未读取到公网下载地址"
+[[ "$PUBLIC_BASE_URL" =~ ^https?://[^[:space:]]+$ ]] || fail "公网下载地址必须是 HTTP(S) 地址"
+
 if [[ -e "$INSTALL_DIR" && ! -d "$INSTALL_DIR" ]]; then
   fail "目标路径不是目录：$INSTALL_DIR"
 elif [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -61,6 +65,9 @@ trap cleanup EXIT
 printf '%s\n' \
   "BOT_TOKEN=$BOT_TOKEN" \
   "OWNER_TELEGRAM_ID=$OWNER_TELEGRAM_ID" \
+  "PUBLIC_BASE_URL=$PUBLIC_BASE_URL" \
+  "DOWNLOAD_PORT=18080" \
+  "DOWNLOAD_TTL_SECONDS=3600" \
   "DATABASE_PATH=/data/sticker-bot.sqlite3" \
   "TEMP_ROOT=/tmp/sticker-bot" \
   "CONVERSION_CONCURRENCY=2" \

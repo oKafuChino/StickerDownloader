@@ -7,13 +7,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TMPDIR=/tmp
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
 COPY app ./app
 RUN pip install --no-cache-dir .
 RUN command -v lottie_convert.py \
+    && python -c "from lottie.exporters.cairo import PngRenderer" \
     && ffmpeg -hide_banner -decoders 2>&1 | grep -q 'libvpx-vp9'
 
 FROM base AS test

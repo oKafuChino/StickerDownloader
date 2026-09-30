@@ -18,9 +18,9 @@
 - Git 和 curl。
 - Docker Engine 和 Docker Compose 插件。
 - VPS 能够访问 Telegram Bot API。
-- 无需域名、反向代理、TLS 证书或开放入站端口。
+- 整包下载需要公网可访问的 HTTP(S) 地址；下载服务默认端口为 `18080`，可使用 HTTPS 反向代理。
 
-> ℹ️ 安装脚本不会安装 Docker、修改系统软件包、调用 `sudo` 或开放端口。
+> ℹ️ 安装脚本不会安装 Docker、修改系统软件包或调用 `sudo`。Compose 会映射下载端口，防火墙与 HTTPS 由管理员配置。
 
 ## 🚀 一键安装
 
@@ -30,7 +30,7 @@
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/oKafuChino/StickerDownloader/main/install.sh)"
 ```
 
-脚本会隐藏输入 Bot Token，并要求输入管理员的 Telegram 数字用户 ID，随后：
+脚本会隐藏输入 Bot Token，并要求输入管理员的 Telegram 数字用户 ID 和公网下载地址，随后：
 
 1. 将项目安装到 `~/sticker-downloader`。
 2. 生成权限为 `0600` 的 `.env` 配置文件。
@@ -89,7 +89,7 @@ docker compose logs -f bot
 
 - `/start <邀请码>`：使用邀请码完成授权。
 - `/help`：查看可用指令。
-- `/getpack <贴纸包链接>`：下载整个贴纸包并打包为 ZIP，保留原始格式。
+- `/getpack <贴纸包链接>`：将整包静态贴纸转为 PNG、动态和视频贴纸转为 GIF，打包 ZIP 后返回临时下载链接。
 - 直接发送贴纸：自动识别并转换。
 
 管理员指令：
@@ -99,6 +99,16 @@ docker compose logs -f bot
 - `/revoke <邀请码>`：撤销邀请码及其关联用户权限。
 
 除 `/start <邀请码>` 外，其他功能只允许已授权用户和管理员使用。
+
+整包输出按原顺序命名为 `001.png`、`002.gif` 等。PNG 保留原始尺寸和完整 Alpha，
+不会额外进行有损压缩；TGS 按原尺寸逐帧渲染，GIF 使用逐帧调色板和抖动，
+不主动缩小尺寸或降低帧率。GIF 格式最多 256 色且只能表示完全透明或不透明，
+帧延时精度为 10 毫秒，因此半透明边缘、渐变及帧时长无法与原始动画完全一致。
+转换不会恢复源文件已丢失的细节。
+
+ZIP 只包含转换结果，有效期默认 1 小时，重启后旧链接失效。转换后 ZIP 上限为
+200 MiB；超限会提示失败，不会为缩小文件而静默降低画质。服务器最多同时保留
+20 个待过期文件，持有链接的人可在有效期内下载，请勿公开转发。
 
 ## ⚙️ 配置
 
@@ -116,8 +126,23 @@ cp .env.example .env
 - `TEMP_ROOT`：媒体临时目录，默认使用 `/tmp/sticker-bot`。
 - `CONVERSION_CONCURRENCY`：同时处理的转换任务数，小型 VPS 建议使用 `1` 或 `2`。
 - `MAX_PENDING_CONVERSIONS`：允许等待的转换任务数，默认 `8`；设为 `0` 时不排队。
+- `PUBLIC_BASE_URL`：临时 ZIP 下载服务的公网 HTTPS 地址，例如 `https://download.example.com`。
+- `DOWNLOAD_PORT`：下载服务端口，默认 `18080`；Compose 的宿主机与容器端口均跟随此配置。
+- `DOWNLOAD_TTL_SECONDS`：下载链接有效期，默认 `3600` 秒；Bot 重启后所有旧链接失效。
 
 手动启动：
+
+旧部署如果在 `.env` 中设置过 `DOWNLOAD_PORT=8080`，请改为 `DOWNLOAD_PORT=18080`，
+并同步更新反向代理的上游端口或防火墙规则。`update.sh` 会保留已有 `.env`，
+所以旧值不会自动被覆盖。HTTPS 域名作为公网地址时通常无需修改域名；若使用
+IP 加端口直连，`PUBLIC_BASE_URL` 也应包含 `:18080`。
+
+例如直连配置（将地址替换为实际公网 IP；公网部署优先使用 HTTPS）：
+
+```env
+PUBLIC_BASE_URL=http://203.0.113.10:18080
+DOWNLOAD_PORT=18080
+```
 
 ```bash
 docker compose up -d --build --wait --wait-timeout 60

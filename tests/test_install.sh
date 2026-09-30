@@ -43,7 +43,7 @@ EOF
 
 chmod +x "$FAKE_BIN/curl" "$FAKE_BIN/git" "$FAKE_BIN/docker"
 
-printf '123456:secret-token\n987654321\n' | env \
+printf '123456:secret-token\n987654321\nhttps://download.example.test\n' | env \
   PATH="$FAKE_BIN:$PATH" \
   INSTALL_DIR="$INSTALL_DIR" \
   DOCKER_LOG="$DOCKER_LOG" \
@@ -52,6 +52,8 @@ printf '123456:secret-token\n987654321\n' | env \
 test -f "$INSTALL_DIR/.env"
 grep -qx 'BOT_TOKEN=123456:secret-token' "$INSTALL_DIR/.env"
 grep -qx 'OWNER_TELEGRAM_ID=987654321' "$INSTALL_DIR/.env"
+grep -qx 'PUBLIC_BASE_URL=https://download.example.test' "$INSTALL_DIR/.env"
+grep -qx 'DOWNLOAD_PORT=18080' "$INSTALL_DIR/.env"
 grep -qx 'DATABASE_PATH=/data/sticker-bot.sqlite3' "$INSTALL_DIR/.env"
 grep -qx 'TEMP_ROOT=/tmp/sticker-bot' "$INSTALL_DIR/.env"
 grep -qx 'CONVERSION_CONCURRENCY=2' "$INSTALL_DIR/.env"
@@ -74,7 +76,7 @@ test ! -e "$INVALID_DIR/.env"
 UNRELATED_DIR="$TEST_ROOT/unrelated"
 mkdir -p "$UNRELATED_DIR"
 printf '%s\n' 'keep me' >"$UNRELATED_DIR/existing.txt"
-if printf '123456:secret-token\n987654321\n' | env \
+if printf '123456:secret-token\n987654321\nhttps://download.example.test\n' | env \
   PATH="$FAKE_BIN:$PATH" \
   INSTALL_DIR="$UNRELATED_DIR" \
   DOCKER_LOG="$DOCKER_LOG" \
