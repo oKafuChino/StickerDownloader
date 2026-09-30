@@ -21,6 +21,7 @@ from app.packs import (
     create_sticker_pack_archive,
     parse_sticker_set_name,
 )
+from app.progress import PackProgressReporter, pack_progress_text
 from app.text import chunk_lines
 from app.workspace import task_workspace
 
@@ -239,9 +240,7 @@ def build_router(
                             )
                             for sticker in sticker_set.stickers
                         ]
-                        await status.edit_text(
-                            f"已找到「{sticker_set.title}」，共 {len(assets)} 张，正在下载并转换为 PNG/GIF。"
-                        )
+                        progress = PackProgressReporter(status, sticker_set.title)
 
                         async def download(
                             asset: StickerAsset, destination: Path
@@ -261,15 +260,18 @@ def build_router(
                             task_dir=task_dir,
                             download=download,
                             converter=converter,
+                            progress=progress.update,
                         )
                         link = await downloads.publish(archive, filename=f"{pack_name}.zip")
                         expires = datetime.fromtimestamp(link.expires_at, timezone.utc)
                         try:
-                            await status.edit_text(
-                                f"{sticker_set.title} · {len(assets)} 张 PNG/GIF 贴纸\n"
+                            await progress.finish(
+                                pack_progress_text(
+                                    sticker_set.title, len(assets), len(assets), "done"
+                                )
+                                + "\n"
                                 f"下载链接：{link.url}\n"
                                 f"有效期至 {expires:%Y-%m-%d %H:%M:%S} UTC，重启后失效。",
-                                disable_web_page_preview=True,
                             )
                         except BaseException:
                             await downloads.revoke(link.token)

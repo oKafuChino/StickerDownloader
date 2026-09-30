@@ -64,11 +64,13 @@ async def test_create_archive_contains_converted_files_in_order(
 
     converter = AsyncMock()
     converter.convert.side_effect = convert
+    progress = AsyncMock()
     archive = await create_sticker_pack_archive(
         assets=assets,
         task_dir=tmp_path,
         download=download,
         converter=converter,
+        progress=progress,
     )
 
     with zipfile.ZipFile(archive) as bundle:
@@ -77,6 +79,12 @@ async def test_create_archive_contains_converted_files_in_order(
         assert bundle.read("002.gif") == b"converted-animated"
         assert bundle.read("003.gif") == b"converted-video"
     assert converter.convert.await_count == 3
+    assert [call.args for call in progress.await_args_list] == [
+        (0, 3, "downloading"), (0, 3, "converting"), (1, 3, "converted"),
+        (1, 3, "downloading"), (1, 3, "converting"), (2, 3, "converted"),
+        (2, 3, "downloading"), (2, 3, "converting"), (3, 3, "converted"),
+        (3, 3, "packing"),
+    ]
     directories = [call.kwargs["task_dir"] for call in converter.convert.await_args_list]
     assert len(set(directories)) == 3
     assert all(not directory.exists() for directory in directories)
@@ -115,13 +123,18 @@ async def test_failed_conversion_leaves_no_archive_or_workspace(tmp_path, failur
 
     converter = AsyncMock()
     converter.convert.side_effect = failure
+    progress = AsyncMock()
     with pytest.raises(type(failure)):
         async with task_workspace(tmp_path) as task_dir:
             await create_sticker_pack_archive(
                 assets=[StickerAsset("file", "one", StickerKind.STATIC)],
                 task_dir=task_dir, download=download, converter=converter,
+                progress=progress,
             )
     assert not list(tmp_path.iterdir())
+    assert [call.args for call in progress.await_args_list] == [
+        (0, 1, "downloading"), (0, 1, "converting"),
+    ]
 
 
 @pytest.mark.asyncio

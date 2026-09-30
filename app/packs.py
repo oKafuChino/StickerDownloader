@@ -45,6 +45,7 @@ async def create_sticker_pack_archive(
     download: Callable[[StickerAsset, Path], Awaitable[None]],
     converter: ConversionService,
     max_archive_bytes: int = MAX_ARCHIVE_BYTES,
+    progress: Callable[[int, int, str], Awaitable[None]] | None = None,
 ) -> Path:
     if not assets:
         raise StickerPackError("Sticker pack is empty")
@@ -62,9 +63,13 @@ async def create_sticker_pack_archive(
         sticker_dir = content_dir / f"{index:0{width}d}"
         sticker_dir.mkdir()
         destination = sticker_dir / f"source{suffix}"
+        if progress is not None:
+            await progress(index - 1, len(assets), "downloading")
         await download(asset, destination)
         if not destination.is_file() or destination.stat().st_size == 0:
             raise StickerPackError(f"Telegram did not provide sticker {index}")
+        if progress is not None:
+            await progress(index - 1, len(assets), "converting")
         output = await converter.convert(
             asset=asset, source=destination, task_dir=sticker_dir,
         )
@@ -80,7 +85,11 @@ async def create_sticker_pack_archive(
         destination.unlink()
         sticker_dir.rmdir()
         files.append(exported)
+        if progress is not None:
+            await progress(index, len(assets), "converted")
 
+    if progress is not None:
+        await progress(len(assets), len(assets), "packing")
     archive = task_dir / "sticker-pack.zip"
     worker = asyncio.create_task(asyncio.to_thread(_write_archive, archive, files))
     try:
